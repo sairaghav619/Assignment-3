@@ -1,0 +1,79 @@
+Question1: Given the tables account and account_audit, set up auditing on account.
+When a record is deleted from the account table, the "deleted" flag is account_audit should be set to true. Please call the trigger function account_audit()
+
+CREATE FUNCTION account_audit
+RETURNS trigger AS
+BEGIN
+IF (pointer = 'INSERT') OR (pointer = 'UPDATE') THEN
+INSERT INTO account_audit (dt,account_id,account_name,account_balance,account_audit_id) VALUES (now(),NEW.account_id,NEW.account_name,NEW.account_balance,NEW.account_audit_id);
+ELSEIF (TG_OP = 'DELETE') THEN
+INSERT INTO account_audit (dt,deleted,account_id,account_name,account_balance) VALUES (now(),TRUE,OLD.account_id,OLD.account_name,OLD.account_balance);
+END IF;
+RETURN NULL;
+END;
+
+CREATE TRIGGER account_audit 
+AFTER INSERT OR UPDATE OR DELETE 
+ON account 
+FOR EACH ROW 
+EXECUTE PROCEDURE account_audit();
+
+Question2: Create a trigger (BEFORE DELETE) which prior to deleting a record from the account table, moves all related sales records from the sales table to sales_archive.
+Please call the trigger function account_sales_archive()
+
+CREATE FUNCTION account_sales_archive()
+RETURNS trigger AS
+BEGIN
+INSERT INTO sales_archive (dt,account_id,amount) SELECT dt,account_id,amount FROM sales 
+WHERE account_id = OLD.account_id;
+DELETE FROM sales WHERE account_id = OLD.account_id;
+RETURN OLD;
+END;
+
+CREATE TRIGGER account_sales_archive
+BEFORE DELETE
+ON account
+FOR EACH ROW
+EXECUTE PROCEDURE account_sales_archive();
+
+Question 3 and 4:: Having doubts
+
+Question 5:Given sales table, set triggers to only allow a sales record where the sale amount is <= the account_balance in the account table.
+
+--	If the sale amount is over the balance, raise an exception with an appropriate message.
+
+--	For an insert: Update the account_balance by subtracting the amount of the sale.
+
+--	For an update: Update the account_balance by the difference of the old sale amount and the new sale amount.
+
+Please call the trigger function balance_sales()
+
+CREATE FUNCTION balance_sales()
+RETURNS trigger AS
+BEGIN
+IF (pointer = 'INSERT') THEN
+IF (SELECT account_balance FROM account WHERE account_id = NEW.account_id) >=  NEW.amount THEN
+UPDATE account SET account_balance = account_balance - NEW.amount 
+WHERE account_id = NEW.account_id;
+RETURN NEW;
+ELSE
+RAISE EXCEPTION 'Over balance';
+END IF;
+ELSE IF (pointer = 'UPDATE') THEN 
+IF (SELECT account_balance FROM account WHERE account_id = NEW.account_id) >=  NEW.amount - OLD.amount THEN
+UPDATE account 
+SET account_balance = account_balance - NEW.amount + OLD.amount 
+WHERE account_id = NEW.account_id;
+RETURN NEW;
+ELSE
+RAISE EXCEPTION 'Over balance';
+END IF;
+END;
+
+CREATE TRIGGER balance_sales
+BEFORE INSERT OR UPDATE
+ON sales
+FOR EACH ROW
+EXECUTE PROCEDURE balance_sales();
+
+
